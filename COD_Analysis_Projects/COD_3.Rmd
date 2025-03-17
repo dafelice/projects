@@ -1,0 +1,164 @@
+---
+title: "COD_3"
+author: "Dominic Felice"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Front Matter
+```{r}
+remove(list = ls())
+#Load Libraries
+library(tidyverse)
+library(readxl)
+library(lubridate)
+library(glmnet)
+library(rpart)
+library(rattle)
+
+Games <- read_excel("Datasets/CODGames2_mp.xlsx")
+```
+
+### Task 1
+
+#### Filtering Partial Cases 
+```{r}
+Games2 <- 
+  Games %>%
+  filter(FullPartial == "Full")
+Games2
+```
+#### Side-By-Side Boxplots
+```{r}
+ggplot(Games2, aes(x = XPType, y = TotalXP)) +
+  geom_boxplot() +
+  labs(title = "Relationship between TotalXP and XPType",
+       x = "XPType",
+       y = "TotalXP")
+```
+
+#### Summary Statistics
+```{r}
+tapply(Games2$TotalXP, Games2$XPType, summary)
+```
+I have learned that the relationship between TotalXP and XPType is in favor of "Double XP + 10%" XP type as it consistently results in higher TotalXP compared to the "10% Boost" XP type across all quartiles and the mean. For "Double XP + 10%", the minimum, 1st quartile, median, mean, 3rd quartile, and maximum TotalXP values are all greater than those of "10% Boost". This indicates that opting for "Double XP + 10%" offers a more substantial boost in XP accumulation than simply utilizing the "10% Boost" option. Therefore, players seeking to maximize their XP gains would likely benefit more from choosing the "Double XP + 10%" option over the "10% Boost" alternative.
+
+### Task 2
+
+#### Part A
+
+##### Create New Variable for Winning Team
+```{r}
+GamesTDM <- Games2 %>%
+  filter(GameType == "HC - TDM") %>%
+  mutate(player = as.numeric(str_extract(Result, "^[0-9]+")),
+         opp = as.numeric(str_extract(Result, "\\d+$")),
+         Win = ifelse(player > opp, 1, 0))
+```
+##### Create Input Matrix and Response Variable Vector
+```{r}
+Xmat <- model.matrix(Score ~ TotalXP + Eliminations + Deaths + Damage + XPType + Win, data = GamesTDM)
+yvec <- GamesTDM$Score
+```
+##### Lasso Model
+```{r}
+lassoModel <- glmnet(x = Xmat, y = yvec,
+                      family = "gaussian",
+                      alpha = 1,
+                      lambda = NULL,
+                      standardize = TRUE)
+
+plot(lassoModel, xvar = "lambda", label = TRUE)
+```
+
+##### Pick Optimal Lambda Values
+```{r}
+set.seed(123)
+lassoCV <- cv.glmnet(x = Xmat, y = yvec,
+                     family = "gaussian",
+                     alpha = 1,
+                     lambda = NULL,
+                     standardize = TRUE,
+                     nfolds = 10)
+set.seed(NULL)
+
+plot(lassoCV)
+```
+
+```{r}
+lassoCV$lambda.min
+lassoCV$lambda.1se
+
+coefLamMin <- predict(lassoCV, s = lassoCV$lambda.min, type = "coefficients")
+coefLam1se <- predict(lassoCV, s = lassoCV$lambda.1se, type = "coefficients")
+
+coefLamMin
+coefLam1se
+
+tempdf <-
+  data.frame(Variable = row.names(coefLamMin),
+             lamMin = as.numeric(coefLamMin),
+             lam1se = as.numeric(coefLam1se))
+```
+Given mine outputs for the $\lambda$ values using the minimum k-fold cross validation error and the 1 standard error (1se) rule, the optimal $\lambda$ value I selected is the min value which comes out to be 2.611974. As seen in the output above, when using lambda$min, more features are kept, while using lambda$1se sets two coefficients to 0.
+
+##### Lasso Regression Equation
+
+$$937.15693473 + 0.05984054x_{TotalXP} + 159.12937918x_{Eliminations} - 72.77820466x_{Deaths} +  0.94772672x_{Damage} - 361.57550500x_{XPType} - 447.19199686x_{Win}$$
+
+```{r}
+predict(lassoModel, s = lassoModel$lambda.min, type = "coefficients")
+```
+
+##### Second Method
+```{r}
+Train <- as.data.frame(cbind(Score = yvec, Xmat))
+
+model1 <- glm(Score ~ 1, data = GamesTDM)
+model2 <- glm(Score ~ TotalXP + Eliminations + Deaths + Damage + XPType + Win, data = GamesTDM)
+
+stats::step(object = model2,
+            scope = list(lower = model1, upper = model2),
+            data = Games3,
+            direction = "backward")
+```
+##### Second Method Equation
+
+$$944.05302 + 0.06054x_{TotalXP} + 185.24081x_{Eliminations} - 73.25104x_{Deaths} - 367.94000x_{XPType} - 454.44701x_{Win}$$
+
+#### Part B
+
+##### Regression Tree For Predicting Score
+```{r}
+treeMod <- rpart(Score ~ TotalXP+Eliminations+Deaths+Damage+XPType+Win, method = "anova", data = GamesTDM, minbucket = 15)
+
+fancyRpartPlot(treeMod, cex = 0.8)
+```
+
+##### Three Highest Importance Variables
+```{r}
+treeMod$variable.importance/sum(treeMod$variable.importance)
+```
+The three most important variables are Danmge(0.398), Eliminations(0.377), and TotalXP(0.102)
+
+#### Part C
+
+From the backwards model, I can see that the important variables are TotalXP, Eliminations, Deaths, Damage, XPType, and Winner. I will standardize across these inputs for mine new model.
+
+##### Backwards ELimination with Standardization
+```{r}
+Games3_standardized <- GamesTDM %>%
+  mutate_at(vars(TotalXP, Eliminations, Deaths, Damage, Win), scale)
+
+model_standardized <- lm(Score ~ TotalXP + Eliminations + Deaths + Damage + XPType + Win,
+                         data = Games3_standardized)
+
+summary(model_standardized)
+```
+
+#### Score Equation 
+$$Score = 3269.58 + 388.44 * TotalXP + 855.77 * Eliminations - 277.96 * Deaths + 175.32 * Damage - 380.59 * XPType - -228.21 * Win$$
+Based off the coefficient values, the most important variables are Eliminations, Damage, and TotalXP. These are the same coefficients as for the decision tree.

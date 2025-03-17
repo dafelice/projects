@@ -1,0 +1,186 @@
+---
+title: "COD_2"
+author: "Dominic Felice"
+output: html_notebook
+---
+## Front Matter
+```{r}
+remove(list = ls())
+#Load Libraries
+library(tidyverse)
+library(readxl)
+library(lubridate)
+library(glmnet)
+```
+
+```{r}
+Games <- read_excel("Datasets/CODGames2_mp.xlsx")
+```
+
+### Task 1
+
+I should avoid using the na.omit() function to remove observations with missing data because it results in information loss and introduces bias by discarding potentially valuable data points. Furthermore, the reduction in sample size caused by the function undermines the statistical analysis's robustness, potentially compromising its generality.
+
+Instead of omitting I can use the following code to count the number of missing values in each row of mine dataset and then use this function to make informed decisions about how to handle missing data.
+```{r}
+count_missing <- function(Games) {
+  row_na_count <- sum(is.na(Games))
+  return(row_na_count)
+}
+
+apply(X = Games, MARGIN = 1, FUN = count_missing)
+```
+For this specific dataset I do not use na.omit because it would leave me with no data at all because every row contains atleast a NA value.
+### Task 2
+
+#### Game Type
+```{r}
+GameType <- 
+  Games %>%
+  group_by(GameType) %>%
+  summarise(count = n())%>%
+  arrange(desc(count))
+
+head(GameType)
+```
+
+```{r}
+ggplot(data = Games, 
+       mapping = aes(x = GameType)) + 
+  geom_bar(fill = "coral", color = "black") + 
+  labs(x = "Game Type", y = "Frequency") + 
+  coord_flip()
+```
+
+The first categorical variable I observed was the GameType column. The variable states the game mode of the observed case. For instance, as seen in the graph above, the most frequent game mode played in mine data set is TDM (Team Deathmatch) with 197 cases, followed by only a few instances of Kill Confirmed, Hardpoint, and Domination. There are no missing values within mine data since every game must have a game type.
+
+#### XP Type
+```{r}
+XPType <- 
+  Games %>%
+  group_by(XPType) %>%
+  summarise(count = n())%>%
+  arrange(desc(count))
+
+head(XPType)
+```
+
+```{r}
+ggplot(data = Games, 
+       mapping = aes(x = XPType)) + 
+  geom_bar(fill = "purple1", color = "black") + 
+  labs(x = "XP Type", y = "Frequency")
+```
+mine second explored categorical variable is XPType. This variable has two different possible values, either a 10% Boost or a Double XP + 10% Boost. This is because COD games frequently have double XP weekends, where every player among the player base receives double the experience points they normally would for a short span of time. This is meant to incentivize players to play more, as well as buy the game within certain periods of time. Just like GameType, the XPType is built into the game, and hence must be present for an individual throughout the game, so there are no missing cases for XPType. 
+
+#### Deaths
+```{r}
+summary(Games$Deaths)
+```
+
+```{r}
+ggplot(data = Games, 
+       mapping = aes(x = Deaths)) + 
+  geom_histogram(fill = "navajowhite3", color = "black") + 
+  labs(x = "Deaths", y = "Frequency")
+```
+The first quantitative variable I are exploring is the Deaths variable. The Deaths variable is fairly self-explanatory, as it showcases how many times a player has been eliminated (died) throughout the span of one game. As was the case with the two previous variables, each player must have a death count within each game (even if the death count is 0), so there are no missing cases in this column. As seen in the histogram, the median and mode of the number of deaths in a singular game was 15. This occurred approximately 50 times in mine dataset, while the minimum number of deaths was only 4, and mine extreme maximum was 42 deaths in a single game. 
+
+#### Objective Kills
+```{r}
+summary(Games$ObjectiveKills)
+```
+
+```{r}
+ggplot(data = Games, 
+       mapping = aes(x = ObjectiveKills)) + 
+  geom_histogram(fill = "indianred2", color = "black", bins = 20) + 
+  labs(x = "Objective Kills", y = "Frequency")
+```
+
+The second quantitative variable I explored is objective kills. Although the histogram above looks empty, this is simply because unlike mine previously explored variables, this one has plenty of NA values. This is because objective kills are eliminations that individual players get on objectives within a single game. However, in the Game Type TDM (where a majority of mine data falls under) and Kill Confirmed, there are no objectives, so there is no potential to obtain objective kills in those game modes. However, these above values are from both Hardpoint and Domination game modes, where teams battle one another to take control of a specific objective. Hence, there are 200 NA values in this case, with only 11 values actually being valid. The median is 7 objective kills, while the minimum and maximum are 3 and 15 kills, respectively.
+
+#### Map 1
+```{r}
+Map1 <- 
+  Games %>%
+  group_by(Map1) %>%
+  summarise(count = n())%>%
+  arrange(desc(count))
+
+head(Map1)
+```
+
+```{r}
+ggplot(data = Games, 
+       mapping = aes(x = Map1)) + 
+  geom_bar(fill = "darkslategray1", color = "black") + 
+  labs(x = "Map 1 Choice", y = "Frequency") + 
+  coord_flip()
+```
+The next categorical variable I chose to explore happens to be the first variable in mine data set, the Map 1 choice. At the beginning of each game, players have the option to choose between two maps (In mine data Map1 and Map2), to decrease the randomness for map selection. The Map1 variable has 43 NA values, which is more interesting to look at than in other variables. This is because in Mini Project 1, I explored the Choice variable, which had no NA variables since games always have to have a final map in which the game is held. However, this demonstrates that not every game has to have a map pick and that there indeed is a level of randomness to the maps chosen. The most chosen map is The Pines followed by Moscow and Zoo.  
+
+#### Time_Sec
+```{r}
+summary(Games$Time_Sec)
+```
+
+```{r}
+ggplot(data = Games, 
+       mapping = aes(x = Time_Sec)) + 
+  geom_histogram(fill = "gold2", color = "black", bins = 5) + 
+  labs(x = "Objective Time in Seconds", y = "Frequency")
+```
+mine final categorical variable I explored is Time_Sec. This variable represents the amount of time (in seconds) that a player spends on an objective in a given game. This variable is only applicable in Hardpoint games, which explains why there are 203 NA values and only 8 valid values for this variable. As seen, the mode for the time in seconds on an objective is 0, while the median is and mean are 15.5 and 22.88 respectively. The maximum amount of time (in seconds) is 58 seconds.
+
+### Task 3
+```{r}
+GameScores <-
+  Games %>%
+  mutate(player = as.integer(str_split_i(Games$Result, "-", 1)),
+         opp = as.integer(str_split_i(Games$Result, "-", 2)))
+
+```
+
+```{r}
+wins = 0
+losses = 0
+
+for(i in 1:nrow(GameScores)){
+  if(GameScores$player[i] > GameScores$opp[i]){
+    wins = wins + 1
+  }
+  else if(GameScores$player[i] < GameScores$opp[i]){
+    losses = losses + 1
+  }
+}
+
+draws = nrow(GameScores) - wins - losses
+
+winRate <- (wins/nrow(GameScores))*100
+lossRate <- (losses/nrow(GameScores))*100
+drawRate <- (draws/nrow(GameScores))*100
+
+winRate
+lossRate
+drawRate
+```
+### Task 4
+For this inference question, I will be exploring how player performance influences the likelihood of the players team winning. The specific variables I will be using are Eliminations, Deaths, Score, and Damage.
+
+```{r}
+Games <- Games %>%
+  mutate(
+    TeamScore = as.numeric(str_extract(Result, "^[0-9]+")),
+    OpponentScore = as.numeric(str_extract(Result, "\\d+$")),
+    Won = if_else(TeamScore > OpponentScore, 1, 0)  # 1 for win, 0 for loss or draw
+  )
+
+#Build a logit regression model to predict if the players team won based on performance
+model <- glm(Won ~ Eliminations + Deaths + Damage + Score, family = binomial, data = Games)
+
+summary(model)
+```
+The equation for whether or not the player won based on their performance is
+$$log(\frac{\hat{p}_i}{1-\hat{p}_i})=0.8147 - 0.0308_{i,eliminations} - 0.1263_{i, deaths} + 0.0076{i, damage} - 0.0005{i, score}$$
+Interestingly, according to the model, if the player had zero eliminations, deaths, damage, and score then he had a .8147 log-odds chance of winning, which is about a 70% chance. It also says that the higher the score and eliminations, the lesser log-odds of the player winning which seems counter-intuitive to this question. This would suggest that either the model, details of the model, or the variables picked aren't the best for answering this problem, or that the players performance might not have any true impact on the whether or not the team wins.

@@ -1,0 +1,397 @@
+---
+title: "COD_4"
+author: "Dominic Felice"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Front Matter
+```{r, warning=FALSE}
+# Remove all objects from Environment
+remove(list = ls())
+
+# Load packages
+library(tidyverse)
+library(ggplot2)
+library(rpart) #For regression and classification trees
+library(rattle) #For nice visualization of trees
+library(randomForest)
+library(pROC)
+library(neuralnet)
+
+# Read in Dataset
+Player_1 <- read.csv("Datasets/CODGames_p1_380.csv")
+Player_2 <- read.csv("Datasets/CODGames_p2_380.csv")
+Maps <- read.csv("Datasets/CODMaps.csv")
+Gamemode <- read.csv("Datasets/CODGameModes.csv")
+
+# Instantiate Task 2 AI data frames for later use
+Player_1AI <- Player_1
+Player_2AI <- Player_2
+```
+
+## Task 1
+
+### Handle Missing Values
+
+```{r}
+# Filtered out missing values of Map1 and Result as they are adding unwanted noise to the Player_1 dataset
+Player_1 <- 
+  Player_1 %>%
+  filter(Map1 != "" & Result != "")
+
+# Filtered out missing values of Map1 and Result as they are adding unwanted noise to the Player_2 dataset
+Player_2 <-
+  Player_2 %>%
+  filter(Map1 != "" & Result != "")
+```
+
+The code above filters out rows from both Player_1 and Player_2 where either Map1 or Result is an empty string. my reasoning for this is that since I intend to compare Map1 to Map2, it makes no sense to keep in observations that are empty strings.
+
+### Stack/Merge Player 1 and Player 2
+
+```{r}
+# Stacked Player_1 and Player_2 on top of one another
+Players <- rbind(Player_1, Player_2)
+```
+
+I just used rbind, a function that I learned about in STAT 184 which vertically combines the data from Player_1 with Player_2.
+
+### Misspelled Map Names Corrected
+
+```{r}
+# First lets handle the trailing blanks from Map1, Map2, and Choice.
+Players <- 
+  Players %>%
+  mutate(Map1 = trimws(Map1),
+         Map2 = trimws(Map2),
+         Choice = trimws(Choice))
+
+# Second check to see if the names in Map1, Map2, and Choice are in Maps
+Values <- c(Players$Map1, Players$Map2, Players$Choice)
+Not_values <- setdiff(Values, Maps$Name)
+print(Not_values)
+
+# Created a dictionary to store the correct names
+Map_dict <- setNames(Maps$Name, Maps$Name)
+
+# Replaced the wrong names with NA's, so that later I can change only those names. 
+Players <- 
+  Players %>%
+  mutate(
+    Map1 = ifelse(Map1 %in% Map_dict, Map1, NA),
+    Map2 = ifelse(Map2 %in% Map_dict, Map2, NA),
+    Choice = ifelse(Choice %in% Map_dict, Choice, NA)
+  )
+
+# Replaced the NA values with the correct spellings from Maps
+Players$Map1 <- ifelse(is.na(Players$Map1), Players$Choice, Players$Map1)
+Players$Map2 <- ifelse(is.na(Players$Map2), Players$Choice, Players$Map2)
+Players$Choice <- ifelse(is.na(Players$Choice), Players$Map1, Players$Choice)
+
+# Checked to see if the names are still misspelled or not.
+Values <- c(Players$Map1, Players$Map2, Players$Choice)
+Not_values <- setdiff(Values, Maps$Name)
+print(Not_values)
+  
+```
+
+I used the trimws() function in STAT184.   
+[setdiff() Documenatation](https://www.rdocumentation.org/packages/prob/versions/1.0-1/topics/setdiff)   
+[setNames() Documentation](https://www.rdocumentation.org/packages/stats/versions/3.6.2/topics/setNames)
+
+After handling the trailing blanks using trimws, I identified the misspelled names in Map1, Map2, and Choice. Once I obtained the misspelled names, I created a dictionary to store the correct names from Maps. I then Int into the players dataset and set all the misspelled names to NA. Finally, I replaced those NA values with the correct values from Maps and rechecked to ensure that none of the names Ire still misspelled.
+
+### Calculate Map Win Count/Probability
+
+```{r}
+# Counted the occurrences of each map in Map1 and Map2 column.
+map1Count <- table(Players$Map1)
+map2Count <- table(Players$Map2)
+
+# Combined the counts of maps from Map1 and Map2
+mapCounts <- map1Count + map2Count
+
+# Grouped the Players data by Choice and calculate the number of wins for each Choice
+mapWinCounts <- 
+  Players %>%
+  group_by(Choice)%>%
+  summarise(wins = sum(Choice == Map1 | (Choice != Map1 & Map1 == Map2)))
+
+# Calculated the probabilities of winning for each Choice
+mapProbabilities <- 
+  mapWinCounts %>%
+  mutate(probability = wins / mapCounts[Choice]) %>%
+  na.omit(Choice)%>%
+  arrange(desc(probability))
+
+mapProbabilities
+```
+
+To find the probabilities of a map being picked given that it was a candidate in the corresponding match (Map1 or Map2), I first had to count how many times a map was a candidate. I did this by using the table() function for both Map1 and Map2 to find the counts of each of the given maps. Then, I grouped my data by the Choice column, which represented the map that was ultimately chosen for each game. Once I grouped by Choice, I summarized my data into wins that disregard ties for Map1 and Map2 in votes (this only calculates Choice for maps that had more votes than the other). Finally, to find the probability of each of these maps being chosen, I calculated ratio of the number of wins to number of candidate appearances for each given map. Ultimately, Checkmate had the most wins at 24, but still came second in Choice-Candidate probability at approximately 42.9%. This was second to Nuketown '84, which only amassed a total of 16 wins, but had a Choice-Candidate probability of approximately 43.2%.   
+
+### Visualization for Map Win Probability
+
+```{r}
+# Created a bar plot using mapProbabilities for Map Win Probability.
+ggplot(mapProbabilities, aes(x = reorder(Choice, probability), y = probability)) +
+  geom_bar(stat = "identity", fill = "darkturquoise") +
+  labs(x = "Map", y = "Win Probability", title = "Map vs. Map Win Probability") + 
+  coord_flip() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+### Visualization for Map Win Count
+
+```{r}
+# Created a bar plot using mapProbabilities for Map Win Count.
+ggplot(mapProbabilities, aes(x = reorder(Choice, wins), y = wins)) +
+  geom_bar(stat = "identity", fill = "gold") +
+  labs(x = "Map", y = "Number of Wins", title = "Map vs. Number of Map Win Count") + 
+  coord_flip() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+## Task 2: Generative AI
+
+```{r}
+# Combined the data frames Player_1AI and Player_2AI by rows.
+combined_data <- bind_rows(Player_1AI, Player_2AI)
+
+# Cleaned the data: remove trailing blanks and correct misspelled map names.
+combined_data$Map1 <- trimws(combined_data$Map1)
+combined_data$Map2 <- trimws(combined_data$Map2)
+
+# Addressed tie vote scenario: Choose Map1 as the winner.
+combined_data$Choice <- ifelse(combined_data$Choice == "Tie", combined_data$Map1, combined_data$Choice)
+```
+
+```{r}
+# Counted the number of times each map was listed as a candidate.
+map_counts <- combined_data %>%
+  group_by(Map1) %>%
+  summarise(count = n()) %>%
+  rename(Map = Map1)
+
+# Counted the number of times each map won the vote.
+map_win_counts <- combined_data %>%
+  group_by(Choice) %>%
+  summarise(wins = n()) %>%
+  rename(Map = Choice)
+
+map_win_counts
+```
+
+```{r} 
+# Calculate the proportion/probability of winning for each map given that it was a candidate.
+map_probabilities <- left_join(map_counts, map_win_counts, by = "Map") %>%
+  mutate(probability = wins / count) %>%
+  arrange(desc(probability))
+
+map_probabilities
+```
+
+```{r}
+# Visualization of results.
+ggplot(map_probabilities, aes(x = reorder(Map, -probability), y = probability)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  labs(x = "Map", y = "Probability of Winning", title = "Probability of Winning Map Vote") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+**For Task 2, the Generative AI tool I used was ChatGPT 3.5. Overall, I gave two prompts:**   
+1. (I copy and pasted the prompt from Task 1 of the Final Project Information document directly into the prompter)   
+2. You are given two data sets, Player_1AI and Player_2AI, you are supposed to merge them and then go from there.   
+   
+   
+Since full details aren't mentioned when using the first prompt, I opted to use a second to further explain the situation. Since Task 1 didn't explicitly mention that there Ire two separate data sets that needed to be merged, ChatGPT originally used data from one data set. After sending it the second prompt, it edited its previous output by using the bind_rows() function to combine the two data sets. After that, it trims the Map1 and Map2 columns to remove blanks and misspelled map names. Then, rather than simply disregarding the maps that Ire chosen automatically through ties, it improperly believes that the Choice column would explicitly be "Tie" if there was a tie in votes. After that, it follows similar steps to what I did, as I grouped my data frame by map and then summarized it to find the total count of each map. It makes two tables for this, one where it uses the total count in Map1, and a second where it uses the total count in Choice. It then joins these two tables by Map to find the probability of Candidate-Choice. Since ChatGPT did not take Map2 into account at all when grouping these maps, this leads to skeId probabilities, and even many probabilities that Ire greater than 1. While my map with the highest win probability was Nuketown '84, ChatGPT's visualization conveyed Crossroads Strike as being the favorite, although its win probability was greater than 2. As seen in the graph above, ChatGPT also failed to properly trim all the map names correctly and instead the misspelled names have little to no games. Similar to me, ChatGPT decided to use a bar graph to depict the correlations. my visualizations look fairly similar, although in my visualizations, the coordinates are flipped so that the bars are displayed horizontally rather than vertically. Additionally, both of my visualizations Ire reordered to better depict clear winners and outliers.  To bypass cramming along the x-axis, ChatGPT decided to simply change the angle of the labels along the x-axis. Lastly, my plot title is centered while ChatGPT's title is sckewed towards the left. Ultimately, while ChatGPT did a similar job with the data visualization, its data cleaning methods are far less thorough and inferior to my methods and led to clear and obvious errors being drastically overlooked.
+
+## Task 3: How does the game type affect TotalXP after accounting for the Score?
+
+### Clean GameType Column
+
+```{r}
+# Removed "HC - " from the "GameType" column in the "Players" data frame
+XPImpact <- Players %>%
+  mutate(GameType = gsub("HC - ", "", x = GameType))
+```
+
+### EDA
+
+```{r}
+# Created a scatterplot using ggplot2
+XPImpact %>%
+  ggplot(aes(x = Score, y = TotalXP)) +
+  geom_point() +
+  facet_wrap(vars(GameType))
+```
+
+```{r}
+# Created a boxplot using ggplot2
+XPImpact %>%
+  ggplot(aes(x = GameType, y = TotalXP)) +
+  geom_boxplot()
+```
+
+### Model Build and AnsIr
+
+```{r}
+# Made indicator variables for game types, with Domination being the baseline
+XPImpact <- XPImpact %>%
+  mutate(TDM = ifelse(GameType == "TDM", 1, 0),
+         Hardpoint = ifelse(GameType == "Hardpoint", 1, 0),
+         KillConfirmed = ifelse(GameType == "Kill Confirmed", 1, 0))
+```
+
+```{r}
+# Used a Linear regression to model TotalXP using GameType and Score
+lin_mod <- lm(TotalXP ~ TDM + Hardpoint + KillConfirmed + Score, XPImpact)
+lin_mod$coefficients
+```
+
+$$\hat{y}_i = 11,216.50 - 3564.88 x_{i,TDM} - 1034.61 x_{i,Hardpoint} - 4865.28 x_{i,Kill Confirmed} + 2.48 x_{i, Score}$$
+
+On average, after accounting for score, a game of Domination will give the most XP. A game of Hardpoint will give 1,034.61 less XP than Domination. A game of TDM will give 3,564.88 less XP than Domination. A game of Kill Confirmed will give 4,865.28 less XP than Domination. All of these differences are an average difference, after accounting for score.
+
+## Task 4 Prediction
+
+### Research Question and Explination
+
+For this task, I want to build three different classification models. my research question will be how the player's eliminations, deaths, damage, and score affect the outcome of the game, and which model is best able to predict this. I choose these variables because kills, deaths, and damage are a good metric for how the player performs in a game. I also include score for gamemodes where taking out enemies isn't the only objective. For example, things like bomb plants, bomb defusals, and time on objective all positively affect the player's score. 
+
+The models I will be comparing are Random Forest, Logistic Regression, and Deep Learning. Random forest are an improvement to decision trees. I start by building multiple decision trees, each with their own bootstrapped version of the data. Additionally, the trees are decorrelated by selecting different features to be included in each tree. Once all the tress have been created, their predictions are aggregated together, meaning that each tree gives a prediction and whichever prediction has the most votes is the final prediction for the random forest.
+
+Logistic Regression is very similar to linear regression in that I build an equation from the data, but instead of giving a continuous number I are given either a 0 or 1. This is done through picking a threshold that the equation will give me and then classifying it as either a 0 or 1. While .5 is usually the decided threshold, I will test multiple thresholds to see which is most accurate. Because this model only gives binary responses, I will have to change the data set to no longer include ties in the game mode.
+
+Deep Learning works by processing data through multiple layers, known as Neural Networks. In this case, the first layer would be the raw data and the last layer would be whether or not the player won. In betIen these two layers, are hidden layers that will process and and optimize the Iight of the variables from the raw data to improve the prediction of the model. The article below was used to help me understand Neural Networks and how to build them in R.
+https://www.geeksforgeeks.org/building-a-simple-neural-network-in-r-programming/
+
+### Data Manipulation
+
+For this problem, I will be using the Player_1 dataset. I decided to not use the combined Players dataset because the individual play style may impact the game outcome. For example Player_1 may always play for getting the most kills, no matter the gamemode, while Player_2 may tend to play more the objective. I additionally choose Player_1 because they have a larger database than Player_2. Finally, I will have to remove any matches that result in a tie, as logistic regression can only handle binary cases. This should not impact the performance of my model because there Ire only 3 cases in the model where the match resulted in a tie. Additionally, I will be performing a 80/20 validation split so that I can compare the models to each other later.
+
+```{r}
+# Prepared the data for analysis
+Player1_4 <- 
+  Player_1 %>%
+  separate(Result, into = c("Result1", "Result2"), sep = "-") %>%
+  mutate(across(c(Result1, Result2), as.integer)) %>%
+    mutate(Won = case_when(
+      Result1 > Result2 ~ 1,
+      Result1 < Result2 ~ 0
+  )) %>%
+  filter(Result1 != Result2) %>%
+  select(Result1, Result2, Eliminations, Deaths, Score, Damage, Won)
+
+# Sampled 80% of the rows for training data
+set.seed(123)
+trainInd <- sample(1:nrow(Player1_4), floor(0.8 * nrow(Player1_4)))
+set.seed(NULL)
+
+# Created training and validation datase
+Train4 <- Player1_4[trainInd, ]
+Validation4 <- Player1_4[-trainInd, ]
+```
+
+### Building Random Forest
+
+```{r}
+# Initialized an empty vector to store accuracy scores for each mtry value
+mtry_values <- 1:4
+rf_accuracy_scores <- numeric(length(mtry_values))
+
+# Tested different values of mtry to get optimal rf
+set.seed(123)
+for (i in seq_along(mtry_values)) {
+    rfModel <- randomForest(as.factor(Won) ~ Eliminations + Deaths + Score + Damage, 
+                            data = Train4, ntree = 500, mtry = mtry_values[i])
+    
+    predWonRf <- predict(rfModel, newdata = Validation4, type = "class")
+    
+    rf_accuracy_scores[i] <- mean(predWonRf == Validation4$Won)
+}
+set.seed(NULL)
+
+# Extracted the optimal accuracy corresponding to the maximum accuracy
+rf_optimal_index <- which.max(rf_accuracy_scores)
+rf_optimal_mtry <- mtry_values[rf_optimal_index]
+rf_optimal_accuracy <- rf_accuracy_scores[rf_optimal_index]
+```
+
+### Building Logistic Regression
+
+```{r}
+logreg_Model <- glm(Won ~ Eliminations + Deaths + Score + Damage, family = binomial, data = Train4)
+logreg_Prob <- predict(logreg_Model, newdata = Validation4, type = "response")
+
+logreg_thresholds <- seq(0, 1, by = 0.01)
+logreg_accuracy_scores <- numeric(length(logreg_thresholds))
+
+# Testing different thresholds to get the best result
+for (i in seq_along(logreg_thresholds)) {
+  logreg_predictions <- ifelse(logreg_Prob > logreg_thresholds[i], 1, 0)
+  logreg_accuracy_scores[i] <- mean(logreg_predictions == Validation4$Won)
+}
+
+# Getting the optimal threshold along with it's accuracy
+logreg_optimal_index <- which.max(logreg_accuracy_scores)
+logreg_optimal_threshold <- logreg_thresholds[logreg_optimal_index]
+logreg_optimal_accuracy <- logreg_accuracy_scores[logreg_optimal_index]
+```
+
+### Building Deep Learning
+
+```{r}
+# Trained a neural network model
+neuralnet_Model <- neuralnet(Won ~ Eliminations + Deaths + Score + Damage, 
+               data = Train4, 
+               hidden = 5, 
+               err.fct = "ce", 
+               linear.output = FALSE, 
+               lifesign = 'minimal', 
+               rep = 2, 
+               algorithm = "rprop+", 
+               stepmax = 100000) 
+
+# Computed predictions using the trained neural network model
+neuralnet_Pred <- compute(neuralnet_Model, Validation4[, c("Eliminations", "Deaths", "Score", "Damage")])
+predicted_probabilities <- neuralnet_Pred$net.result[, 1]
+
+neuralnet_thresholds <- seq(0, 1, by = 0.01)
+neuralnet_accuracy_scores <- numeric(length(neuralnet_thresholds))
+                                  
+for (i in seq_along(neuralnet_thresholds)) {
+  neuralnet_predictions <- ifelse(predicted_probabilities > neuralnet_thresholds[i], 1, 0)
+  neuralnet_accuracy_scores[i] <- mean(neuralnet_predictions == Validation4$Won)
+}
+
+neuralnet_optimal_index <- which.max(neuralnet_accuracy_scores)
+neuralnet_optimal_threshold <- neuralnet_thresholds[neuralnet_optimal_index]
+neuralnet_optimal_accuracy <- neuralnet_accuracy_scores[neuralnet_optimal_index]
+```
+
+### Comparing Results
+
+Now that all the models are built and I have their respective accuracies when predicting on the validation data.
+
+```{r}
+# The results for each model
+rf_optimal_accuracy
+logreg_optimal_accuracy
+neuralnet_optimal_accuracy
+```
+
+As I can see from the output, logistic regression was the most accurate when using eliminations, deaths, damage, and score to predict whether or not the player won. It had an accuracy of 64% when using a threshold of .49 while random forest and deep learning only had a 59% and 54% accuracy when optimized. 
+
+### Analyzing the Research Question
+
+Since I have built my models and assessed their accuracy when compared to each other, I determined that logistic regression was the best at fitting my validation data and was thus the best model to use when trying to ansIr this research question.
+
+```{r}
+summary(logreg_Model)
+```
+
+According to my model, Eliminations and Deaths have the biggest impact on whether or not the player wins or losses, while score and damage have a very low impact on whether or not the player wins. Eliminations positively impact whether or not the player wins, while deaths, score, and damage all negatively impact whether or not the players wins, even if the impact is very small. Interestingly, my intercept is very big. This suggests that if the player Ire to do nothing, meaning they have zero eliminations, deaths, score, and damage, they would win about 80% of the time. This would suggest a strong skew in the data or some inherent bias with that causes the win rate to naturally be so high. According to my model though, the best way to play in these games is to maximize eliminations, while trying to keep deaths, score, and damage all minimized.

@@ -1,0 +1,183 @@
+---
+title: "COD_1"
+author: "Dominic Felice"
+output:
+  html_document:
+    df_print: paged
+---
+## Front Matter
+```{r}
+remove(list = ls())
+#Load Libraries
+library(tidyverse)
+library(readxl)
+library(lubridate)
+```
+
+## Task 1 - Read Dataset into R
+```{r}
+Games <- read_excel("Datasets/CODGames2_mp.xlsx")
+```
+
+## Task 2 - Explore the Dataset
+
+I have selected six variables for analysis: Choice, PrimaryWeapon, Score, Damage, TotalXP, and Eliminations. Among these, the first three variables are categorical, while the remaining three are quantitative in nature.
+
+### Choice
+```{r}
+Choice <- 
+  Games %>%
+  group_by(Choice) %>%
+  summarise(count = n())%>%
+  arrange(desc(count))
+
+Choice <- na.omit(Choice)
+
+head(Choice)
+```
+### Flipped Bar Chart For The Variable Choice
+```{r}
+# Filter out NA values from the 'Choice' column
+Games_filtered <- Games[!is.na(Games$Choice), ]
+
+# Plotting the bar chart
+ggplot(data = Games_filtered, 
+       mapping = aes(x = Choice)) + 
+  geom_bar(fill = "lightgreen", color = "black") + 
+  labs(x = "Map Choice", y = "Frequency") + 
+  coord_flip()
+```
+For the first categorical variable, I use the variable "Choice" from the Games dataset. Choice represents the ultimate choice of a map for each COD game played in the dataset. There are a total of 25 various maps that have been chosen throughout the dataset, with three map choices tied for the most number of plays. These three maps are Rush, Diesel, and Crossroads Strike, all tied with 15 games played each.
+
+### PrimaryWeapon
+```{r}
+PrimaryWeapon <- 
+  Games %>%
+  group_by(PrimaryWeapon) %>%
+  summarise(count = n())%>%
+  arrange(desc(count))
+
+head(PrimaryWeapon)
+```
+### Flipped Bar Chart For The Variable PrimaryWeapon
+```{r}
+ggplot(data = Games, 
+       mapping = aes(x = PrimaryWeapon)) + 
+  geom_bar(fill = "lightblue", color = "black") + 
+  labs(x = "Primary Weapon", y = "Frequency") + 
+  coord_flip()
+```
+For the second categorical variable in mine data, I use the primary weapon column in the dataset. This column represents the various weapons that were used within the COD games. As seen in the visualization, the most used weapon ("meta") is the M16, with close to 50 uses as a primary. Following that, the next most frequent weapon is the MP5, followed by the Pellington 703. The least used weapons are the MG82, the FFAR1, and the AK-47.
+
+### Score
+```{r}
+summary(Games$Score)
+```
+
+### Score Histogram
+```{r}
+ggplot(data = Games, 
+       mapping = aes(x = Score)) + 
+  geom_histogram(fill = "pink", color = "black") + 
+  labs(x = "Score", y = "Frequency")
+```
+
+The first quantitative variable that I explore is the score variable. This denotes the score for a player within each COD game. As seen, the data is slightly right-skewed, where the score severely drops off after about the 4000 mark. The lowest value in mine data is a score of 100, while the highest is 7315. The median of the scores is 2770, while the mean is slightly higher at 2945.
+
+### Damage 
+```{r}
+summary(Games$Damage)
+```
+
+### Damage Histogram
+```{r}
+ggplot(data = Games, 
+       mapping = aes(x = Damage)) + 
+  geom_histogram(fill = "red", color = "black") + 
+  labs(x = "Damage", y = "Frequency")
+```
+
+Another important variable within the dataset is the damage variable. The damage represents how much health players drain from their opponents in total in an individual COD game. This distribution is fairly normal, but I have one clear outlier which represents mine maximum of 960 damage. The median of the dataset is 397, while the mean is slightly higher at approximately 415.
+
+### TotalXP
+```{r}
+summary(Games$TotalXP)
+```
+### TotalXP Histogram
+```{r}
+ggplot(data = Games, 
+       mapping = aes(x = TotalXP)) + 
+  geom_histogram(fill = "orchid", color = "black") + 
+  labs(x = "Total XP (Experience)", y = "Frequency")
+```
+
+Another important variable within the dataset is the TotalXP variable. TotalXP represents the level in terms of progress the player is at throughout playing the game. The distribution is skewed to the left, but that is expected as most people play video games for fun, while there are a few who play professionally or take the game seriously enough to devote those hours. The median of the dataset is 10,328, while the mean is slightly higher at approximately 11,975. The maximum is 43,186, while the minimum is 1,935.
+
+### Eliminations
+```{r}
+summary(Games$Eliminations)
+```
+### Eliminations Histogram
+```{r}
+ggplot(data = Games, 
+       mapping = aes(x = Eliminations)) + 
+  geom_histogram(fill = "lightgoldenrod", color = "black") + 
+  labs(x = "Eliminations", y = "Frequency")
+```
+
+Arguably the most important of the quantitative variables from a game standpoint is eliminations. This dictates how many opponents an individual eliminates within a single game. In mine dataset, the minimum number of kills in a single game is two, while the maximum is much larger, at 39 kills. The median is 14 kills, and the mean is not too far off, at approximately 15. There are more outliers on the higher end of the graph, as there are plenty of games that have between 0-10 eliminations in mine data.
+
+## Task 3
+
+Q1. How were the values for `FullPartial` determined and what is value referencing as being Full or Partial?
+
+Q2. Why were the `Diffuses`, `Plants`, `Detonates`, and `Deposits` variables included if they all contain only `NA` values.
+
+Q3. For the `MapVote` variable, what conditions cause a game to have no map vote?
+
+## Task 4 - Part 1
+
+Question: Is the player’s performance, as quantified by the amount of experience points gained (TotalXP variable) changing over time?
+
+```{r}
+#Making the month variable as a factor from the Date variable and assigning to a new dataset
+GamesMonths <- 
+  Games %>%
+  mutate(Month = as.factor(month(Date, label = TRUE)))
+
+ggplot(GamesMonths, aes(x = Month, y = TotalXP)) +
+  geom_boxplot()
+```
+Based on the plot, the player's performance has decreased slightly over time. This slight decrease could be explained by factors other than time, such as individual performance within each game. The individual performance of a player within a game is measured by `eliminations`, `deaths`, `score`, and `damage`.
+
+## Task 4 - Part 2
+
+Question: In what game mode does the player have the best KD score? 
+
+K/D is the ratio between the amount of kills and deaths a player gets while in game. Since no K/D is included in the data I will have to begin by calculating the K/D for each game, grouping the rows by game mode, then finding the average K/D for those game modes.
+
+### Preprocessing Data
+```{r}
+CODGamesKD = Games %>%
+  mutate(KD = Eliminations / Deaths)
+
+head(CODGamesKD)
+```
+### Data Visualization
+```{r}
+ggplot(data = CODGamesKD, mapping = aes(x = KD)) +
+  geom_density(aes(fill = factor(GameType)), alpha = .5) +
+  labs(x = "Kill-Death Ratio",
+        y= "Density",
+        fill = "Game Mode")
+```
+Based on the visualization above, it would seem that HardCore Domination or HardCore Team Death Match would have the highest average KD, however it is hard to tell. 
+
+```{r}
+CODGamesKD %>%
+  group_by(GameType) %>%
+  summarize(avg_KD = mean(KD, na.rm = TRUE)) %>%
+  arrange(desc(avg_KD))
+```
+
+When looking at the numeric values for average K/D ratio by game type, it is easier to see that this player has their highest average K/D ratio in HardCore Team Death Match games.
